@@ -77,11 +77,20 @@ class Ship
     model;          //Store the ship's model, but seems didn't work
     Geometry;       //The ship's whole Geometry, include the firepoint and model
 
+    cannon_attack_point_list;                   //This is the sub cannon of Cruiser class ship
+
+    iron_laser_attack_point_list;               //This is the main cannon of the Cruiser class ship
+    iron_laser_cooldown;                        //This is the cool down for the laser attack
+    iron_laser_radius;                          //This is the factor that affect the radius of the iron cannon's laser (visual effect)
+    iron_frequency;                             //This is the factor that affect the frequency of the iron cannon attack
+
     position;       //The ship's position
     rand;           //A factor that controls the ship's floating animation
     point;          //The number of points that the ship worth, used to build the fleet
 
     ifsunk;
+    if_iron_attack;         //If the iron cannon currently firing
+    if_laser_attack;        //If the laser cannon currently firing
 
     constructor(sclass, shp, sshield, sspeed, sdps, factor)
     {
@@ -91,6 +100,9 @@ class Ship
         this.speed = sspeed;
         this.dps = sdps;
         this.ifsunk = false;
+
+        this.cannon_attack_point_list = [];
+        this.iron_laser_attack_point_list = [];
 
         this.rand = factor * (Math.floor(Math.random() * Math.floor(1000)) / 900);
     }
@@ -161,10 +173,31 @@ class Ship
     }
 
     /**
+     * This function used to choose the target ship to attack
+     * @param {[Ship]} ship_list - The target list of ship that contains the target ship
+     * @return {int} - The position of the target ship in the ship list
+     */
+    selectTarget(ship_list)
+    {
+        var i, min, target;
+        min = ship_list[0].hp;
+        target = 0;
+        for (i = 1; i < ship_list.length; i++)
+        {
+            if (ship_list[i].hp < min)
+            {
+                min = ship_list[i].hp;
+                target = i;
+            }
+        }
+        return target;
+    }
+
+    /**
      * This function is used to calculate the result of an attack from another ship
-     * @name receiveAttack
+     * @name receiveAttack  
      * @param {int} method - The type of attack, 1 represent the cannon attack, 2 represent the iron cannon attack.
-     * @return {boolean} - The result of the attack, true for hit, false for miss
+     * @return {boolean} - The result of the attack, true for hit, false for miss.
      */
     receiveAttack(method)
     {
@@ -208,32 +241,18 @@ class Ship
 
 class Cruiser extends Ship
 {
-    iron_laser_attack_point_list;                  //This is the main cannon of the Cruiser class ship
-    iron_laser_cooldown;         //This is the cool down for the laser attack
-    cannon_attack_point_list;                 //This is the sub cannon of Cruiser class ship
-    missile;
-
-    iron_laser_radius;              //This is the factor that affect the radius of the iron cannon's laser (visual effect)
-    iron_frequency;                 //This is the factor that affect the frequency of the iron cannon attack
-
-    if_iron_attack;         //If the iron cannon currently firing
-    if_laser_attack;        //If the laser cannon currently firing
-    if_missile_attack;      //If the missile current launchingW
-
     constructor(x, y, z, ry)
     {
         //class, id, hp, shield, speed, dps, rand factor
-        super(2, 5000000, 50, 20, 25, 0.7);
+        super(2, 500, 50, 20, 25, 0.7);
 
         //Initialize the properties
-        this.cannon_attack_point_list = [];
-        this.laser_attack_point_list = [];
         this.iron_laser_radius = 3;
         this.iron_frequency = 1;
         this.laser_cooldown = 400;
         this.point = 50;
 
-        this.if_iron_attack = this.if_laser_attack = this.if_missile_attack = false;
+        this.if_iron_attack = this.if_laser_attack = false;
 
         //Call the function to create the basic Geometry of the ship alone with the model
         super.createGeometry(2, './js/model/Fleet/Cruiser/scene.gltf');
@@ -256,7 +275,7 @@ class Cruiser extends Ship
         this.iron_laser_attack_point_list[0].position.set(3, 0.5, 1);
 
         //Add the attack point to the object's Geometry
-        this.Geometry.add(this.iron_laser_attack_point);
+        this.Geometry.add(this.iron_laser_attack_point_list[0]);
 
         var i;
         for (i = 0; i < 5; i++)
@@ -264,7 +283,7 @@ class Cruiser extends Ship
             var subcannon = new THREE.Mesh(new THREE.SphereBufferGeometry(0.2, 10, 10), new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.4 }));
             subcannon.position.set(2, 0.5, i - 3);
             //Store each subcannon position
-            this.cannon.push(subcannon);
+            this.cannon_attack_point_list.push(subcannon);
             this.Geometry.add(subcannon);
         }
     }
@@ -280,8 +299,7 @@ class Cruiser extends Ship
         if (!this.if_laser_attack && !this.ifsunk)
         {
             //Perform the attack
-            this.laserAttackStart(target_ship);
-            return true;
+            return this.laserAttackStart(target_ship);
         }
         else
             false;
@@ -323,9 +341,10 @@ class Cruiser extends Ship
                     //Calculate the destination error displacement
                     var destination_error = new THREE.Vector3(target_ship.position[0] + random_error_x, target_ship.position[1] + random_error_y, target_ship.position[2]);
                     var destination = destination_error;
-                    destination += destination_error.sub(this.iron_laser_attack_point.position) * Math.random();
+                    destination.add(destination_error.sub(this.cannon_attack_point_list[i].position) * Math.random());
                     subresult.push(destination);
                 }
+                console.log(this.cannon_attack_point_list.lengths);
                 result.push(subresult);
             }
             this.if_laser_attack = true;
@@ -370,7 +389,7 @@ class Cruiser extends Ship
             var result = [];
             //Get the world position of the attack point
             var origin = new THREE.Vector3();
-            this.iron_laser_attack_point[0].getWorldPosition(origin);
+            this.iron_laser_attack_point_list[0].getWorldPosition(origin);
             //Push the origin position
             result.push(new THREE.Vector3().copy(origin));
             //Check if the laser hit the target
@@ -436,7 +455,7 @@ class Destroyer extends Ship
 
     constructor(x, y, z, ry)
     {
-        //class, id, hp, shield, speed, dps, rand factor
+        //class, hp, shield, speed, dps, rand factor
         super(1, 200, 25, 35, 13, 0.4);
 
         //Initialize the properties
@@ -540,25 +559,8 @@ class laser
     to;
     model;
     langle;
-    constructor(ship_from, ship_to, hit)
+    constructor(pfrom, pto)
     {
-        //Update the world coordinates
-        scene.updateMatrixWorld();
-
-        var pfrom = new THREE.Vector3();
-        var pto = new THREE.Vector3();
-
-        ship_from.laser.getWorldPosition(pfrom);
-        ship_to.Geometry.getWorldPosition(pto);
-        //If missed
-        if (hit === 0)
-        {
-            //Calculate the shifting factor
-            var shifty = Math.floor(Math.random() * Math.floor(4)) - 2;
-            var shiftx = Math.floor(Math.random() * Math.floor(4)) - 2;
-            pto.set(pto.x + shiftx, pto.y + shifty, pto.z);
-        }
-
         var d = pfrom.distanceTo(pto);
         var cylinderMesh;
 
@@ -696,8 +698,8 @@ class explosion
 function InitScene()
 {
     scene = new THREE.Scene();
-    axes_helper = new THREE.AxesHelper(5);
-    scene.add(axesHelper);
+    var axes_helper = new THREE.AxesHelper(5);
+    scene.add(axes_helper);
 }
 
 function InitCamera()
@@ -714,7 +716,7 @@ function InitCamera()
     controls.maxDistance = 100;
 }
 
-function InitShader()
+function InitRenderer()
 {
     //Initialize the renderer
     renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -767,7 +769,7 @@ function CreateEffect()
 
 function AmbientLight(color)
 {
-    alight = new THREE.AmbientLight(color);
+    var alight = new THREE.AmbientLight(color);
     alight.intensity = 0.2;
     scene.add(alight);
 }
@@ -867,46 +869,55 @@ function InitLight() {
     DirectLight(800, 200, 0, 0xeba434, 3);
 }
 
-function GeneObj() {
+function InitObj() {
     light_list = [];
     player_ship_list = [];
     computer_ship_list = [];
     laser_list = [];
     projectile_list = [];
     explosion_list = [];
+
+    total_point = 200;
+    player_point = computer_point = 0;
 }
 
-function InitFleet(point)
+/**
+ *  This function is used to generate the computer's fleet based on total point 
+ */
+function InitFleet()
 {
-    var i, cp;
-    for (cp = point; cp > 0;)
+    for (computer_point = 0; computer_point <= total_point;)
     {
         //Random set ship
         var ship_type = Math.floor(Math.random() * Math.floor(2));
         var new_ship;
+        //Create the ship
         if (ship_type === 0)
         {
-            new_ship = new Destroyer(300, -5, -20 + edes_num * 5, Math.PI, edes_num);
+            new_ship = new Destroyer(300, -5, -30 + computer_ship_list.length * 10, Math.PI);
         }
         else if (ship_type === 1)
         {
-            ecru_num++;
-            new_ship = new Cruiser(300, 0, -30 + (ecru_num - 100) * 10, Math.PI, ecru_num);
+            new_ship = new Cruiser(300, 0, -30 + computer_ship_list.length * 10, Math.PI);
         }
+        //Push the new ship into the computer's ship list
         computer_ship_list.push(new_ship);
-        cp -= new_ship.point;
+        //Draw the ship in the scene
+        scene.add(new_ship.Geometry);
+        //Increase the point
+        computer_point += new_ship.point;
     }
 }
 
 var Ship_control = {
     "Add Destroyer": function ()
     {
-        if (pp - 25 >= 0)
+        if (player_point + 25 <= total_point)
         {
-            des_num++;
-            var new_ship = new Destroyer(0, -5, -20 + des_num * 5, 0, des_num);
-            ship_list.push(new_ship);
-            pp -= new_ship.point;
+            var new_ship = new Destroyer(0, -5, -30 + player_ship_list.length * 10, 0);
+            player_ship_list.push(new_ship);
+            scene.add(new_ship.Geometry);
+            player_point += new_ship.point;
         }
         else
         {
@@ -915,32 +926,27 @@ var Ship_control = {
     },
     "Remove Destroyer": function ()
     {
-        //Keep the limit of 0
-        if (des_num >= 1)
+        var i;
+        for (i = player_ship_list.length - 1; i > -1; i--)
         {
-            var i;
-            for (i = ship_list.length - 1; i > -1; i--)
+            if (player_ship_list[i].class === 1)
             {
-                if (ship_list[i].id === des_num)
-                {
-                    pp += ship_list[i].point;
-                    //Remove ship from scene
-                    scene.remove(ship_list[i].Geometry);
-                    ship_list.splice(i, 1);
-                }
+                player_point -= player_ship_list[i].point;
+                //Remove ship from scene
+                scene.remove(player_ship_list[i].Geometry);
+                player_ship_list.splice(i, 1);
+                break;
             }
-            des_num--;
         }
-        console.log(des_num);
     },
     "Add Cruiser": function ()
     {
-        if (pp - 50 >= 0)
+        if (player_point + 50 <= total_point)
         {
-            cru_num++;
-            var new_ship = new Cruiser(0, 0, -30 + (cru_num - 100) * 10, 0, cru_num);
-            ship_list.push(new_ship);
-            pp -= new_ship.point;
+            var new_ship = new Cruiser(0, 0, -30 + player_ship_list.length * 10, 0);
+            player_ship_list.push(new_ship);
+            scene.add(new_ship.Geometry);
+            player_point += new_ship.point;
         }
         else
         {
@@ -949,21 +955,17 @@ var Ship_control = {
     },
     "Remove Cruiser": function ()
     {
-        //Keep the limit of 0
-        if (cru_num >= 101)
+        var i;
+        for (i = player_ship_list.length - 1; i > -1; i--)
         {
-            var i;
-            for (i = ship_list.length - 1; i > -1; i--)
+            if (player_ship_list[i].class === 2)
             {
-                if (ship_list[i].id === cru_num)
-                {
-                    pp += ship_list[i].point;
-                    //Remove ship from scene
-                    scene.remove(ship_list[i].Geometry);
-                    ship_list.splice(i, 1);
-                }
+                player_point -= player_ship_list[i].point;
+                //Remove ship from scene
+                scene.remove(player_ship_list[i].Geometry);
+                player_ship_list.splice(i, 1);
+                break;
             }
-            cru_num--;
         }
     },
     "Add BattleShip": function ()
@@ -1028,127 +1030,6 @@ function AddGui()
     gui.open();
 }
 
-/*****Anime Function*****
- * Name:
- *      cubeanime
- * Usage:
- *      Used to control the cube's floating animation, wasn't use, just keep it here
- * Para:
- *      None
- * Process:
- *      None
- * */
-function cubeanime() {
-    var i, j, k;
-    var current = 0;
-
-    //console.log(cube_velocity[0][1]);
-
-    //Start to move the cube, to create a wave effect
-    for (i = 0; i < (cube_number * 2) + 1; i++) {
-        for (j = 0; j < (cube_number * 2) + 1; j++) {
-            //Get the current ideal position of the cube
-            var x, y, z, cx, cy, cz;
-            var position = i * (cube_number * 2 + 1) + j;
-            cx = cube_position[position][0];
-            cz = cube_position[position][2];
-
-            //Get the current position of the cube
-            x = cube_list[position].position.x;
-            y = cube_list[position].position.y;
-            z = cube_list[position].position.z;
-
-            //Change the height of the cube based on the position
-            cube_position[position][1] = (Math.sin(angle + position) + Math.cos(angle + position)) * 1;
-            cy = cube_position[position][1];
-
-            //Calculate the acceleration of the cube
-            var ax, ay, az;
-            ax = 1 * 1 * ((x - cx) * (x - cx));
-            ay = 1 * 1 * ((y - cy) * (y - cy));
-            az = 1 * 1 * ((z - cz) * (z - cz));
-
-            //Calculate the velocity of the cube
-            if (x - cx > 0) {
-                cube_velocity[position][0] -= (ax * dt);
-            }
-            else if (x === cx)
-                var a;
-            else {
-                cube_velocity[position][0] += (ax * dt);
-            }
-
-            if (y - cy > 0) {
-                cube_velocity[position][1] -= (ay * dt);
-            }
-            else if (y === cy)
-                console.log('This shouldnt happen');
-            else {
-                cube_velocity[position][1] += (ay * dt);
-            }
-
-            if (z - cz > 0) {
-                cube_velocity[position][2] -= (az * dt);
-            }
-            else if (z === cz)
-                var aa;
-            else {
-                cube_velocity[position][2] += (az * dt);
-            }
-
-            //Calculate the position of the cube
-            x += cube_velocity[position][0] * dt;
-            y += cube_velocity[position][1] * dt;
-            z += cube_velocity[position][2] * dt;
-            //if (position === 0)
-            //console.log(y);
-            cube_list[position].position.set(x, y, z);
-
-            //Change the color of the cube based on the cube's height
-            y = cube_list[position].position.y;
-            cube_list[position].material.color = new THREE.Color(0.2 + Math.cos(y * 2), 1 - Math.sin(y * 2) * 0.5, 1 - Math.cos(y * 2) * 0.5);
-        }
-    }
-}
-
-/*****Anime Function*****
- * Name: 
- *      shipAnime
- * Usage: 
- *      Used to control the ship's floating animation
- * Para: 
- *      None
- * Process: 
- *      None
- * */
-function shipAnime()
-{
-    var i, j, k;
-    var x, y, z;
-    var s = 0.2;
-    //console.log(ship_list.length);
-    for (i = 0; i < ship_list.length; i++)
-    {
-        //console.log(ship_list[i].Geometry.position.x);
-        x = ship_list[i].position[0];
-        y = ship_list[i].position[1];
-        z = ship_list[i].position[2];
-        //console.log(typeof ship_list[i].Geometry);
-        ship_list[i].Geometry.position.set(x + s * Math.sin(angle) * ship_list[i].rand, y + s * Math.cos(angle) * ship_list[i].rand, z + s * (Math.sin(angle) * ship_list[i].rand * Math.cos(angle) * ship_list[i].rand));
-    }
-
-    for (i = 0; i < eship_list.length; i++)
-    {
-        //console.log(ship_list[i].Geometry.position.x);
-        x = eship_list[i].position[0];
-        y = eship_list[i].position[1];
-        z = eship_list[i].position[2];
-        //console.log(typeof ship_list[i].Geometry);
-        eship_list[i].Geometry.position.set(x + s * Math.sin(angle) * eship_list[i].rand, y + s * Math.cos(angle) * eship_list[i].rand, z + s * (Math.sin(angle) * eship_list[i].rand * Math.cos(angle) * eship_list[i].rand));
-        //ship_list[i].setPosition(x + Math.sin(angle) * 4, y + Math.sin(angle) * 4, z + Math.sin(angle) * 4);
-    }
-}
-
 /*****Status Function*****
  * Name: 
  *      checkShip
@@ -1162,23 +1043,23 @@ function shipAnime()
 function checkShip()
 {
     var i;
-    for (i = 0; i < eship_list.length; i++)
+    for (i = 0; i < computer_ship_list.length; i++)
     {
-        if (eship_list[i].ifsunk)
+        if (computer_ship_list[i].ifsunk)
         {
-            scene.remove(eship_list[i].Geometry);
-            explosion_list.push(new explosion(eship_list[i].Geometry.position, 15, 0.2));
-            eship_list.splice(i, 1);
+            scene.remove(computer_ship_list[i].Geometry);
+            explosion_list.push(new explosion(computer_ship_list[i].Geometry.position, 15, 0.2));
+            computer_ship_list.splice(i, 1);
         }
     }
 
-    for (i = 0; i < ship_list.length; i++)
+    for (i = 0; i < player_ship_list.length; i++)
     {
-        if (ship_list[i].ifsunk)
+        if (player_ship_list[i].ifsunk)
         {
-            scene.remove(ship_list[i].Geometry);
-            explosion_list.push(new explosion(ship_list[i].Geometry.position, 15, 0.2));
-            ship_list.splice(i, 1);
+            scene.remove(player_ship_list[i].Geometry);
+            explosion_list.push(new explosion(player_ship_list[i].Geometry.position, 15, 0.2));
+            player_ship_list.splice(i, 1);
         }
     }
 }
@@ -1282,6 +1163,11 @@ function checkExplosion()
     }
 }
 
+function createLaser()
+{
+
+}
+
 /*****Main Function*****
  * Name:
  *      gameProcess
@@ -1295,35 +1181,33 @@ function checkExplosion()
  * */
 function gameProcess()
 {
-    var i, j, k;
+    var i, j, k, target;
 
-    for (i = 0; i < ship_list.length; i++)
+    for (i = 0; i < player_ship_list.length; i++)
     {
-        //Check if the crusier class
-        if (ship_list[i].class === 2)
+        //Select the target ship
+        target = player_ship_list[i].selectTarget(computer_ship_list);
+
+        //If attack, create laser effect first
+        var coordinates = player_ship_list[i].laserAttackStart(computer_ship_list[target]);
+        if (coordinates)
         {
-            ship_list[i].ironAttack(1);
+            console.log(coordinates);
+            for (j = 0; j < coordinates.length; j++)
+            {
+                projectile_list.push(new cannon(1, coordinates[j][0], coordinates[j][1], 10));
+            }
+
         }
-        ship_list[i].laserAttack(1);
-        ship_list[i].countdown();
     }
 
-    for (i = 0; i < eship_list.length; i++)
-    {
-        //Check if the crusier class
-        if (eship_list[i].class === 2)
-        {
-            eship_list[i].ironAttack(0);
-        }
-        eship_list[i].laserAttack(0);
-        eship_list[i].countdown();
-    }
+    //for (i = 0; i < computer_ship_list.length; i++)
 
     //eship_list[0].ironAttack();
 
     checkShip();
 
-    checkLaser();
+    //checkLaser();
 
     checkProjectile();
 
@@ -1334,8 +1218,7 @@ function gameProcess()
 
 function Animate()
 {
-    //cubeanime();
-    shipAnime();
+    scene.updateMatrixWorld();
     //If start the battle
     if (isBattle)
     {
@@ -1373,13 +1256,14 @@ function Animate()
     };
 }
 
-AddGui();
-GeneObj();
-InitFleet();
-InitLight();
-InitShader();
+InitRenderer();
+InitScene();
 InitCamera();
+InitObj();
+InitLight();
 CreateEffect();
+InitFleet();
+AddGui();
 
 Animate();
 
