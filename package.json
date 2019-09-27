@@ -1,0 +1,25 @@
+{
+  "name": "osu_gdc_website",
+  "version": "1.0.0",
+  "description": "OSU GDC Website",
+  "main": "app.js",
+  "scripts": {
+    "test": "",
+    "start": "node app.js",
+    "build": ""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OSUGameDev/Website/.git"
+  },
+  "author": "",
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/OSUGameDev/Website/issues"
+  },
+  "homepage": "https://github.com/OSUGameDev/Website#readme",
+  "dependencies": {
+    "express": "^4.16.3"
+  },
+  "devDependencies": {}
+}

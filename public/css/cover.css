@@ -1,0 +1,36 @@
+#top_bar {
+    position: absolute;
+    border: none red;
+    width: 600px;
+    font-family: 'Montserrat', sans-serif;
+}
+
+#title {
+    color: white;
+    left: 10px;
+    top: 0px;
+    border: none purple;
+    width: auto;
+}
+
+#total_score {
+    color: white;
+}
+
+#player_text {
+    color: deepskyblue;
+}
+
+#player_score {
+    color: deepskyblue;
+}
+
+#enemy_text {
+    color: darkred;
+}
+
+#enemy_score {
+    color: darkred;
+}
+
+
