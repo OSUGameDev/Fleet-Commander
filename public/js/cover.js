@@ -10,8 +10,8 @@ import { SobelOperatorShader } from '../three.js/examples/jsm/shaders/SobelOpera
 import { OrbitControls } from '../three.js/examples/jsm/controls/OrbitControls.js';
 import { Quaternion, Object3D, Vector3 } from '../three.js/src/Three.js';
 
-//import { Ship, Cruiser, Destroyer, laser, cannon, explosion } from './ships.js';
-//import { Cruiser } from './ships.js';
+import { Cruiser, Destroyer } from './module/ships.js';
+import { laser, cannon, explosion } from './module/effects.js';
 
 //Some basic component
 var scene,
@@ -66,630 +66,11 @@ var params = {
     Sobel_effect: false
 };
 
-class Ship
-{
-    class;
-    hp;
-    shield;
-    speed;
-
-    size;
-    sensor;
-
-    model;          //Store the ship's model, but seems didn't work
-    Geometry;       //The ship's whole Geometry, include the firepoint and model
-
-    cannon_attack_point_list;                   //This is the sub cannon of Cruiser class ship
-    laser_cooldown;
-
-    iron_laser_attack_point_list;               //This is the main cannon of the Cruiser class ship
-    iron_laser_cooldown;                        //This is the cool down for the laser attack
-    iron_laser_radius;                          //This is the factor that affect the radius of the iron cannon's laser (visual effect)
-    iron_frequency;                             //This is the factor that affect the frequency of the iron cannon attack
-
-    position;       //The ship's position
-    rand;           //A factor that controls the ship's floating animation
-    point;          //The number of points that the ship worth, used to build the fleet
-
-    ifsunk;
-    if_iron_attack;         //If the iron cannon currently firing
-    if_laser_attack;        //If the laser cannon currently firing
-
-    constructor(sclass, shp, sshield, sspeed, factor, ssize, ssensor)
-    {
-        this.class = sclass;
-        this.hp = shp;
-        this.shield = sshield;
-        this.speed = sspeed;
-        this.ifsunk = false;
-
-        this.size = ssize;
-        this.sensor = ssensor;
-
-        //Initialize the attack point list
-        this.cannon_attack_point_list = [];
-        this.iron_laser_attack_point_list = [];
-
-        //Initialize the status
-        this.if_iron_attack = false;
-        this.if_laser_attack = false;
-
-        this.rand = factor * (Math.floor(Math.random() * Math.floor(1000)) / 900);
-    }
-
-    createGeometry(type, path)
-    {
-        //This is the object that will contain all the meshes of the ship
-        //this.Geometry = new THREE.Mesh(new THREE.SphereBufferGeometry(6, 30, 30), new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.0 }));
-        this.Geometry = new THREE.Object3D();
-
-        //Load the model
-        var newobject = this.load(path);
-
-        //Store and save the model with current object's geometry
-        newobject.then(obj =>
-        {
-            obj.scene.traverse(function (mod)
-            {
-                mod.castShadow = true;
-                mod.receiveShadow = true;
-            });
-
-            //Read the model the set the base position
-            this.model = obj.scene;
-            if (type === 1)     //Destroyer
-            {
-                this.model.rotation.y = Math.PI / 2;
-                this.model.position.set(2.5, -4, 2.5);
-            }
-            else if (type === 2)        //Crusier
-            {
-                this.model.position.set(-4, -5, 4);
-            }
-
-            //Link the model with Geometry
-            this.Geometry.add(this.model);
-        });
-    }
-
-    load(path)
-    {
-        var progress = console.log;
-        /*
-        return new Promise(function (resolve, reject)
-        {
-            var obj;
-            var mtlLoader = new THREE.MTLLoader();
-            mtlLoader.load('./js/model/Fleet/Crusier.mtl', function (materials)
-            {
-                materials.preload();
-                var objLoader = new THREE.OBJLoader();
-                objLoader.setMaterials(materials);
-                objLoader.load('./js/model/Fleet/Crusier.obj', resolve, progress, reject);
-            }, progress, reject);
-        });
-        */
-        return new Promise(function (resolve, reject)
-        {
-            var loader = new THREE.GLTFLoader();
-            loader.load(path, resolve);
-        });
-    }
-
-    setPosition(x, y, z)
-    {
-        this.position = [x, y, z];
-        this.Geometry.position.set(x, y, z);
-    }
-
-    /**
-     * This function used to choose the target ship to attack
-     * @param {[Ship]} ship_list - The target list of ship that contains the target ship
-     * @return {int} - The position of the target ship in the ship list
-     */
-    selectTarget(ship_list)
-    {
-        var i, min, target;
-        min = 99999;
-        for (i = 0; i < ship_list.length; i++)
-        {
-            //Get the row hp
-            var target_ship_hp = ship_list[i].hp;
-            //Get the class difference
-            var class_dif = this.class - ship_list[i].class;
-            if (class_dif > 0)
-                target_ship_hp *= class_dif * 3;
-            if (target_ship_hp < min)
-            {
-                min = target_ship_hp;
-                target = i;
-            }
-        }
-        return target;
-    }
-
-    /**
-     * This function is used to generate the cannon attack between two ships
-     * @param {Ship} target_ship - The ship being attack.
-     * @return {boolean} - If the attack performed.
-     */
-    laserAttack(target_ship)
-    {
-        //Check if the attack could be performed
-        if (!this.if_laser_attack && !this.ifsunk)
-        {
-            //Perform the attack
-            return this.laserAttackStart(target_ship);
-        }
-        else
-            return false;
-    }
-
-    /**
-     * This function used to generate the information used for generate the cannon projectile
-     * @param {Ship} target_ship - This is the ship being attack
-     * @return {[Vector3]} - If not false, then contain multiple coordinates pair for generate the cannon projectile
-     */
-    laserAttackStart(target_ship)
-    {
-        if (!target_ship.ifsunk)
-        {
-            var i, random_error_x, random_error_y, random_error_z, destination;
-            var result = [];
-            //Read each subcannon and generate the process
-            for (i = 0; i < this.cannon_attack_point_list.length; i++)
-            {
-                var subresult = [];
-                //Get the world position of the attack point, which is the origin point of the attack
-                var origin = new THREE.Vector3();
-                this.cannon_attack_point_list[i].getWorldPosition(origin);
-                //Push the origin position
-                subresult.push(new THREE.Vector3().copy(origin));
-                //Check if hit the target
-                if (target_ship.receiveAttack(1, this.size, this.sensor))
-                {
-                    //Calculate the target position with random generated errors
-                    random_error_z = Math.floor(Math.random() * Math.floor(4)) - 2;
-                    //Calculate the destination point with random error
-                    destination = new THREE.Vector3(target_ship.Geometry.position.x, target_ship.Geometry.position.y, target_ship.Geometry.position.z + random_error_z);
-                }
-                else
-                {
-                    //Calculate the target position with random generated errors
-                    random_error_x = Math.floor(Math.random() * Math.floor(8)) - 4;
-                    if (random_error_x > 0)
-                        random_error_x += 5;
-                    else
-                        random_error_x -= 5;
-                    random_error_y = Math.floor(Math.random() * Math.floor(8)) - 4;
-                    //Calculate the destination point with random error
-                    destination = new THREE.Vector3(target_ship.Geometry.position.x + random_error_x, target_ship.Geometry.position.y + random_error_y, target_ship.Geometry.position.z);
-                    //Get the result vector point from origin point to destination point
-                    destination.sub(origin);
-                    destination.multiplyScalar(Math.random() * 0.5 + 1);
-                    destination.add(origin);
-                }
-                //Store the second result point as destination
-                subresult.push(destination);
-                result.push(subresult);
-            }
-            this.if_laser_attack = true;
-            return result;
-        }
-        else
-            return false;
-    }
-
-    /**
-     * This function was used to generate an iron cannon attack between two ships
-     * @param {Ship} target_ship - The ship being attack.
-     * @returns {[Vector3]} - If not false, then contain coordinates for generate the laser beam
-     */
-    ironAttack(target_ship)
-    {
-        //Check if ship is in the attacking mode and if the ship can perform the attack and the target ship is alive
-        if (!this.if_iron_attack && !this.ifsunk && !target_ship.ifsunk)
-        {
-            //Check if the ship will perform the attack
-            var chance = Math.floor(Math.random() * Math.floor(1000));
-            //The ship only have 2% chance per frame to perform the attack
-            if (chance > 980)
-            {
-                return this.ironAttackStart(target_ship);
-            }
-        }
-        else
-            return false;
-    }
-
-    /**
-     * This function was used to generate the information of the laser used for the iron cannon attack
-     * @param {Ship} target_ship - Ths ship that receive the iron cannon attack
-     * @return {[Vector3]} - The array contain the origin and destination point in the form of Vector3
-     */
-    ironAttackStart(target_ship)
-    {
-        if (!target_ship.ifsunk && this.iron_laser_attack_point_list.length !== 0)
-        {
-            var i, random_error_x, random_error_y, random_error_z, destination;
-            var result = [];
-            //Read each subcannon and generate the process
-            for (i = 0; i < this.iron_laser_attack_point_list.length; i++)
-            {
-                //Get the world position of the attack point, which is the origin point of the attack
-                var origin = new THREE.Vector3();
-                this.iron_laser_attack_point_list[i].getWorldPosition(origin);
-                //Push the origin position
-                result.push(new THREE.Vector3().copy(origin));
-                //Check if hit the target
-                if (target_ship.receiveAttack(1, this.size, this.sensor))
-                {
-                    //Calculate the target position with random generated errors
-                    random_error_z = Math.floor(Math.random() * Math.floor(4)) - 2;
-                    //Calculate the destination point with random error
-                    destination = new THREE.Vector3(target_ship.Geometry.position.x, target_ship.Geometry.position.y, target_ship.Geometry.position.z + random_error_z);
-                }
-                else
-                {
-                    //Calculate the target position with random generated errors
-                    random_error_x = Math.floor(Math.random() * Math.floor(8)) - 4;
-                    if (random_error_x > 0)
-                        random_error_x += 5;
-                    else
-                        random_error_x -= 5;
-                    random_error_y = Math.floor(Math.random() * Math.floor(8)) - 4;
-                    //Calculate the destination point with random error
-                    destination = new THREE.Vector3(target_ship.Geometry.position.x + random_error_x, target_ship.Geometry.position.y + random_error_y, target_ship.Geometry.position.z);
-                    //Get the result vector point from origin point to destination point
-                    destination.sub(origin);
-                    destination.multiplyScalar(Math.random() * 0.5 + 1);
-                    destination.add(origin);
-                }
-                //Store the second result point as destination
-                result.push(destination);
-            }
-            this.if_iron_attack = true;
-            return result;
-        }
-        else
-            return false;
-    }
-
-    /**
-     * This function is used to calculate the result of an attack from another ship
-     * @name receiveAttack  
-     * @param {int} method - The type of attack, 1 represent the cannon attack, 2 represent the iron cannon attack.
-     * @param {int} attack_size - The attack ship's size.
-     * @param {int} attack_sensor - The attack ship's sensor level.
-     * @return {boolean} - The result of the attack, true for hit, false for miss.
-     */
-    receiveAttack(method, attack_size, attack_sensor)
-    {
-        var aim = attack_sensor * (2 - (attack_size - this.size) / attack_size);
-
-        //Calculate the result of the attack
-        var hit = Math.floor(Math.random() * 100);
-        //Check if hit
-        if (hit <= aim)
-        {
-            return true;
-        }
-        else
-            return false;
-    }
-
-    /**
-     * This function is used to set the damage that the ship receives
-     * @name receiveDamage
-     * @param {int} method - The type of attack, 1 represent the cannon attack, 2 represent the iron cannon attack.
-     */
-    receiveDamage(method)
-    {
-        var damage = (Math.floor(Math.random() * Math.floor(80)) / 100 + 0.6) * method * method * 1.5 * 1.5 * 10;
-        this.hp -= damage;
-        if (this.hp <= 0)
-            this.sunk();
-    }
-
-    sunk()
-    {
-        this.ifsunk = true;
-    }
-}
-
-class Cruiser extends Ship
-{
-    constructor(x, y, z, ry)
-    {
-        //class, hp, shield, speed, rand factor, size, sensor
-        super(2, 500, 50, 20, 0.7, 40, 45);
-
-        //Initialize the properties
-        this.iron_laser_radius = 3;
-        this.iron_frequency = 1;
-        this.laser_cooldown = 400;
-        this.iron_laser_cooldown = 1000;
-        this.point = 50;
-
-        //Call the function to create the basic Geometry of the ship alone with the model
-        super.createGeometry(2, './js/model/Fleet/Cruiser/scene.gltf');
-
-        //Call the function to create the attack point of the ship
-        this.createAttackPoint();
-
-        //Set and store the ship's position in the scene
-        this.setPosition(x, y, z);
-        this.Geometry.rotation.y = ry;
-
-        //Add everything into the scene
-        scene.add(this.Geometry);
-    }
-
-    createAttackPoint()
-    {
-        //The laser attack will generate from this point
-        this.iron_laser_attack_point_list.push(new THREE.Mesh(new THREE.SphereBufferGeometry(0.2, 10, 10), new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.4 })));
-        this.iron_laser_attack_point_list[0].position.set(3, 0.5, 1);
-
-        //Add the attack point to the object's Geometry
-        this.Geometry.add(this.iron_laser_attack_point_list[0]);
-
-        var i;
-        for (i = 0; i < 5; i++)
-        {
-            var subcannon = new THREE.Mesh(new THREE.SphereBufferGeometry(0.2, 10, 10), new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.4 }));
-            subcannon.position.set(2, 0.5, i - 3);
-            //Store each subcannon position
-            this.cannon_attack_point_list.push(subcannon);
-            this.Geometry.add(subcannon);
-        }
-    }
-
-    /**
-     * This function is used to update the cooldown of the weapon
-     */
-    countdown()
-    {
-        if (this.if_laser_attack)
-        {
-            var wtf = Math.floor(Math.random() * Math.floor(4));
-            this.laser_cooldown -= wtf;
-            this.iron_laser_cooldown -= wtf;
-            if (this.laser_cooldown <= 0)
-            {
-                this.if_laser_attack = false;
-                this.laser_cooldown = 400;
-            }
-            if (this.iron_laser_cooldown <= 0)
-            {
-                this.if_iron_attack = false;
-                this.iron_laser_cooldown = 1000;
-            }
-        }
-    }
-}
-
-class Destroyer extends Ship
-{
-    laser_cooldown;
-
-    if_laser_attack;
-
-    constructor(x, y, z, ry)
-    {
-        //class, hp, shield, speed, rand factor, size, sensor
-        super(1, 200, 25, 35, 0.4, 10, 20);
-
-        //Initialize the properties
-        this.if_laser_attack = false;
-        this.laser_cooldown = 50;
-        this.point = 25;
-
-        //Call the function to create the basic Geometry of the ship alone with the model
-        this.createGeometry(1, './js/model/Fleet/Destroyer/scene.gltf');
-
-        //Call the function to create the attack point of the ship
-        this.createAttackPoint();
-
-        //Add everything into the scene
-        scene.add(this.Geometry);
-
-        //Set the ship's position in the scene
-        this.setPosition(x, y, z);
-        this.Geometry.rotation.y = ry;
-    }
-
-    createAttackPoint()
-    {
-        var i, subcannon;
-        for (i = 0; i < 2; i++)
-        {
-            //Generate the subcannon
-            subcannon = new THREE.Mesh(new THREE.SphereBufferGeometry(0.2, 10, 10), new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.2 }));
-            subcannon.position.set(3, 0, i - 1);
-            this.cannon_attack_point_list.push(subcannon);
-            //Add the attack point to the object's Geometry
-            this.Geometry.add(subcannon);
-        }
-    }
-
-    countdown()
-    {
-        if (this.if_laser_attack)
-        {
-            var wtf = Math.floor(Math.random() * Math.floor(4));
-            this.laser_cooldown -= wtf;
-            if (this.laser_cooldown <= 0)
-            {
-                this.if_laser_attack = false;
-                this.laser_cooldown = 100;
-            }
-        }
-    }
-}
-
-class laser
-{
-    model;
-    langle;
-    duration;
-    size;
-    color;
-    constructor(pfrom, pto, lduration, ssize, scolor)
-    {
-        console.log("Draw Laser!");
-        //Store the size of the laser
-        this.size = ssize;
-        this.color = scolor;
-
-        var d = pfrom.distanceTo(pto);
-        var cylinderMesh;
-
-        // cylinder: radiusAtTop, radiusAtBottom, height, radiusSegments, heightSegments
-        var edgeGeometry = new THREE.CylinderGeometry(this.size * 1.3 * 0.3, this.size * 1.3, d, 20, 1);
-        var mat = new THREE.MeshLambertMaterial();
-        mat.color.setHex(this.color);
-        mat.emissive = new THREE.Color(this.color);
-        mat.emissiveIntensity = 1000;
-        mat.transparent = true;
-        mat.opacity = 0.05;
-
-        var edge = new THREE.Mesh(edgeGeometry, mat);
-        cylinderMesh = new THREE.Mesh();
-        cylinderMesh.add(edge);
-
-        //Create another layer
-
-        // cylinder: radiusAtTop, radiusAtBottom, height, radiusSegments, heightSegments
-        edgeGeometry = new THREE.CylinderGeometry(this.size * 0.3, this.size, d, 20, 1);
-        mat = new THREE.MeshLambertMaterial();
-        mat.color.setHex(this.color);
-        mat.emissive = new THREE.Color(this.color);
-        mat.emissiveIntensity = 1000;
-
-        edge = new THREE.Mesh(edgeGeometry, mat);
-        cylinderMesh.add(edge);
-
-        //Rotate the laser towards the target ship
-        var quaternion = new THREE.Quaternion();
-        var from = new THREE.Vector3(0, 1, 0);
-        var to = new THREE.Vector3();
-        to.copy(pto);
-        to.sub(pfrom);
-        quaternion.setFromUnitVectors(from, to);
-        cylinderMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.normalize());
-
-        //Calculate and set position of the laser based on the coordinate system
-        var central = new THREE.Vector3();
-        central.copy(pto);
-        central.sub(pfrom);
-        central.divideScalar(2);
-        central.add(pfrom);
-        cylinderMesh.position.copy(central);
-
-        //Generate explosion at the end
-        /*
-        var new_explosion = new explosion(pto, 0.5, lduration, this.color);
-        scene.add(new_explosion.Geometry);
-        explosion_list.push(new_explosion);
-        */
-
-        this.model = cylinderMesh;
-        this.langle = 0;
-        this.duration = lduration; 
-    }
-
-    remove()
-    {
-        scene.remove(this.model);
-    }
-}
-
-class cannon
-{
-    type;               //This is the type of the cannon projectile, 1 means the subcannon
-    Geometry;           //This is the geometry instance of the cannon projectile
-
-    origin;             //This is the origin of the cannon
-    destination;        //This is where the object is going to
-    forward_vector;     //This is the direction of the cannon projectile
-
-    velocity;           //This is the velocity of the projectile
-
-    /**
-     * 
-     * @param {int} t - The type of the cannon projectile, 1 for subcannon.
-     * @param {Vector3} o - The origin point where the projectile start to move.
-     * @param {Vector3} d - The destination point where the projectile stop to move.
-     * @param {float} v - The velocity.
-     */
-    constructor(t, o, d, v)
-    {
-        this.type = t;
-
-        this.origin = new THREE.Vector3().copy(o);
-        this.destination = new THREE.Vector3().copy(d);
-        this.velocity = v;
-
-        if (t === 1)
-        {
-            // cylinder: radiusAtTop, radiusAtBottom, height, radiusSegments, heightSegments
-            var edgeGeometry = new THREE.CylinderGeometry(0.02, 0.005, 1.5, 6, 1);
-            var mat = new THREE.MeshLambertMaterial({ color: 0xfbff00 });
-            mat.emissive = new THREE.Color(0xfbff00);
-            mat.emissiveIntensity = 1000;
-            mat.transparent = true;
-            mat.opacity = 1.0;
-
-            var edge = new THREE.Mesh(edgeGeometry, mat);
-            this.Geometry = new THREE.Mesh();
-            this.Geometry.add(edge);
-        }
-
-        this.Geometry.position.copy(o);
-
-        //Rotate the laser towards the target ship
-        var quaternion = new THREE.Quaternion();
-        var from = new THREE.Vector3(0, 1, 0);
-        var to = new THREE.Vector3().copy(this.destination).sub(this.origin);
-        quaternion.setFromUnitVectors(from, this.destination);
-        this.Geometry.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.normalize());
-        //Store the forward vector
-        to.normalize();
-        this.forward_vector = new THREE.Vector3().copy(to);
-    }
-}
-
-class explosion
-{
-    eangle;
-    radius;
-    Geometry;
-    duration;
-    color;
-
-    constructor(pos, r, d, c)
-    {
-        this.radius = r;
-        this.eangle = 0;
-        this.duration = d;
-        this.color = c;
-        this.Geometry = new THREE.Mesh(new THREE.SphereBufferGeometry(r, 15, 15), new THREE.MeshLambertMaterial({
-            color: this.color,
-            transparent: true,
-            opacity: 1.0,
-            emissive : new THREE.Color(this.color),
-            emissiveIntensity : 1000
-        }));
-        this.Geometry.position.copy(pos);
-    }
-}
-
 function InitScene()
 {
     scene = new THREE.Scene();
     var axes_helper = new THREE.AxesHelper(5);
-    scene.add(axes_helper);
+    //scene.add(axes_helper);
 }
 
 function InitCamera()
@@ -867,7 +248,7 @@ function InitObj() {
     projectile_list = [];
     explosion_list = [];
 
-    total_point = 200;
+    total_point = 800;
     player_point = computer_point = 0;
 }
 
@@ -876,26 +257,31 @@ function InitObj() {
  */
 function InitFleet()
 {
-    for (computer_point = 0; computer_point <= total_point;)
+    for (computer_point = 0; computer_point < total_point;)
     {
         //Random set ship
         var ship_type = Math.floor(Math.random() * Math.floor(2));
-        var new_ship;
+        var new_ship = false;
         //Create the ship
         if (ship_type === 0)
         {
-            new_ship = new Destroyer(300, -5, -30 + computer_ship_list.length * 10, Math.PI);
+            if (computer_point + 25 <= total_point)
+                new_ship = new Destroyer(300, -5, -30 + computer_ship_list.length * 10, Math.PI);
         }
         else if (ship_type === 1)
         {
-            new_ship = new Cruiser(300, 0, -30 + computer_ship_list.length * 10, Math.PI);
+            if (computer_point + 50 <= total_point)
+                new_ship = new Cruiser(300, 0, -30 + computer_ship_list.length * 10, Math.PI);
         }
-        //Push the new ship into the computer's ship list
-        computer_ship_list.push(new_ship);
-        //Draw the ship in the scene
-        scene.add(new_ship.Geometry);
-        //Increase the point
-        computer_point += new_ship.point;
+        if (new_ship)
+        {
+            //Push the new ship into the computer's ship list
+            computer_ship_list.push(new_ship);
+            //Draw the ship in the scene
+            scene.add(new_ship.Geometry);
+            //Increase the point
+            computer_point += new_ship.point;
+        }
     }
 }
 
@@ -1020,6 +406,22 @@ function AddGui()
     gui.open();
 }
 
+
+function drawShips()
+{
+    var i;
+    for (i = 0; i < player_ship_list.length; i++)
+    {
+        if (!player_ship_list[i].if_in_scene)
+            scene.add(player_ship_list[i].Geometry);
+    }
+    for (i = 0; i < computer_ship_list.length; i++)
+    {
+        if (!computer_ship_list[i].if_in_scene)
+            scene.add(computer_ship_list[i].Geometry);
+    }
+}
+
 /*****Status Function*****
  * Name: 
  *      checkShip
@@ -1032,26 +434,50 @@ function AddGui()
  * */
 function checkShip()
 {
-    var i;
+    var i, new_explosion;
     for (i = 0; i < computer_ship_list.length; i++)
     {
+        //console.log("Computer list: " + i + " hp is: " + computer_ship_list[i].hp);
         if (computer_ship_list[i].ifsunk)
         {
             scene.remove(computer_ship_list[i].Geometry);
-            explosion_list.push(new explosion(computer_ship_list[i].Geometry.position, 15, 0.2));
+            new_explosion = new explosion(computer_ship_list[i].Geometry.position, 15, 2, 0xFF8900);
+            scene.add(new_explosion.Geometry);
+            explosion_list.push(new_explosion);
             computer_ship_list.splice(i, 1);
         }
     }
 
     for (i = 0; i < player_ship_list.length; i++)
     {
+        console.log("Player list: " + i + " hp is: " + player_ship_list[i].hp);
         if (player_ship_list[i].ifsunk)
         {
             scene.remove(player_ship_list[i].Geometry);
-            explosion_list.push(new explosion(player_ship_list[i].Geometry.position, 15, 0.2));
+            new_explosion = new explosion(player_ship_list[i].Geometry.position, 15, 2, 0xFF8900);
+            scene.add(new_explosion.Geometry);
+            explosion_list.push(new_explosion);
             player_ship_list.splice(i, 1);
         }
     }
+
+    //Check if game over
+    if (player_ship_list.length === 0 && computer_ship_list.length === 0)
+    {
+        console.log("Draw!");
+        isBattle = false;
+    }
+    else if (player_ship_list.length === 0)
+    {
+        console.log("Computer win!");
+        isBattle = false;
+    }
+    else if (computer_ship_list.length === 0)
+    {
+        console.log("Player win!");
+        isBattle = false;
+    }
+    
 }
 
 /*****Status Function*****
@@ -1088,6 +514,23 @@ function checkProjectile()
                 scene.add(new_explosion.Geometry);
                 explosion_list.push(new_explosion);
             }
+            //After reach the destination, check if the ship been hit
+            if (projectile_list[i].if_target_ship)
+            {
+                var tgroup = projectile_list[i].target_group;
+                var tpos = projectile_list[i].target_pos;
+                if (tgroup === 0)
+                {
+                    if (tpos < computer_ship_list.length && !computer_ship_list[tpos].ifsunk)
+                        computer_ship_list[projectile_list[i].target_pos].receiveDamage(2);
+                }
+                else if (tgroup === 1)
+                {
+                    if (tpos < player_ship_list.length && !player_ship_list[tpos].ifsunk)
+                        player_ship_list[projectile_list[i].target_pos].receiveDamage(2);
+                }
+            }
+            //Remove the projectile from the scene and list
             scene.remove(projectile_list[i].Geometry);
             delete projectile_list[i];
             projectile_list.splice(i, 1);
@@ -1149,11 +592,6 @@ function checkExplosion()
     }
 }
 
-function createLaser()
-{
-
-}
-
 /*****Main Function*****
  * Name:
  *      gameProcess
@@ -1167,20 +605,30 @@ function createLaser()
  * */
 function gameProcess()
 {
-    var i, j, k, target;
+    //Check the ship status
+    checkShip();
+
+    //Check if the game over
+    if (!isBattle)
+        return;
+
+    var i, j, k, target, ray;
 
     for (i = 0; i < player_ship_list.length; i++)
     {
         //Select the target ship
         target = player_ship_list[i].selectTarget(computer_ship_list);
 
-        //Check if perform the cannon attack
+        //Check if perform the cannon attack, and draw the cannon
         var coordinates = player_ship_list[i].laserAttack(computer_ship_list[target]);
         if (coordinates)
         {
             for (j = 0; j < coordinates.length; j++)
             {
-                var new_cannon_projectile = new cannon(1, coordinates[j][0], coordinates[j][1], 1);
+                var new_cannon_projectile = new cannon(1, coordinates[j][0], coordinates[j][1], 2);
+                //Check if hit the ship
+                if (coordinates[j][2])
+                    new_cannon_projectile.setHit(0, target);
                 scene.add(new_cannon_projectile.Geometry);
                 projectile_list.push(new_cannon_projectile);
             }
@@ -1192,6 +640,7 @@ function gameProcess()
         if (coordinates)
         {
             var new_laser = new laser(coordinates[0], coordinates[1], 2, 0.05, 0x00c3ff);
+            computer_ship_list[target].receiveDamage(5);
             scene.add(new_laser.model);
             laser_list.push(new_laser);
         }
@@ -1211,7 +660,9 @@ function gameProcess()
         {
             for (j = 0; j < coordinates.length; j++)
             {
-                new_cannon_projectile = new cannon(1, coordinates[j][0], coordinates[j][1], 1);
+                new_cannon_projectile = new cannon(1, coordinates[j][0], coordinates[j][1], 2);
+                if (coordinates[j][2])
+                    new_cannon_projectile.setHit(1, target);
                 scene.add(new_cannon_projectile.Geometry);
                 projectile_list.push(new_cannon_projectile);
             }
@@ -1222,8 +673,8 @@ function gameProcess()
         coordinates = computer_ship_list[i].ironAttack(player_ship_list[target]);
         if (coordinates) 
         {
-            console.log(coordinates);
             new_laser = new laser(coordinates[0], coordinates[1], 2, 0.05, 0xff0000);
+            player_ship_list[target].receiveDamage(5);
             scene.add(new_laser.model);
             laser_list.push(new_laser);
         }
@@ -1232,22 +683,21 @@ function gameProcess()
         computer_ship_list[i].countdown();
     }
 
-    //eship_list[0].ironAttack();
-
-    checkShip();
-
     checkLaser();
 
     checkProjectile();
 
-    checkExplosion();
-
-    
+    checkExplosion();   
 }
 
 function Animate()
 {
+    //Update the world matrix
     scene.updateMatrixWorld();
+
+    //Check if all the obejct was draw
+    drawShips();
+
     //If start the battle
     if (isBattle)
     {
